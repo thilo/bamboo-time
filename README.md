@@ -76,3 +76,11 @@ If `xcode-select` points at the Command Line Tools, prefix these with
 
 Check the API directly:
 `curl -u "$KEY:x" -H "Accept: application/json" https://mycompany.bamboohr.com/api/v1/employees/0`
+
+## License
+
+[Sustainable Use License 1.0](LICENSE.md): use and change it for personal,
+non-commercial or your own internal business purposes (so employees can use it
+at work). Share it only free of charge for non-commercial purposes. Selling it
+or using it in commercial products isn't allowed. Provided as is, without any
+warranty or liability.
