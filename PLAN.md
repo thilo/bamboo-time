@@ -193,7 +193,8 @@ scripts/make-icon.swift       # draws the icon, runs iconutil
   `Info.plist` with the version stamped in, icon in `Resources/`) →
   `codesign --force --sign "${SIGN_IDENTITY:--}"` (ad-hoc by default) →
   `hdiutil create -format UDZO build/BambooTime.dmg` with an `Applications`
-  symlink for drag-to-install.
+  symlink for drag-to-install; the symlink is removed from `build/dmg/`
+  afterwards so editor file crawlers don't follow it into `/Applications`.
 - Icon: white lowercase "b" whose bowl is a clock face (10:10) on a green
   rounded square (824 pt body on a 1024 grid), drawn with Core Graphics at all
   iconset sizes.

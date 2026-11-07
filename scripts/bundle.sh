@@ -22,4 +22,6 @@ codesign --force --sign "${SIGN_IDENTITY:--}" "$APP"
 
 ln -s /Applications build/dmg/Applications
 hdiutil create -quiet -volname BambooTime -srcfolder build/dmg -ov -format UDZO build/BambooTime.dmg
+# A symlink to /Applications left in the workspace makes editor file crawlers walk all apps.
+rm build/dmg/Applications
 echo "→ build/BambooTime.dmg ($VERSION)"
