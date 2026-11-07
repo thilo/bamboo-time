@@ -24,7 +24,8 @@ over the old one. After each update macOS asks once to allow Keychain access
 to the API key: click **Always Allow**. To stop that prompt, create a
 self-signed code-signing certificate (Keychain Access → Certificate Assistant
 → Create a Certificate, type "Code Signing") and build with
-`SIGN_IDENTITY="<cert name>" scripts/bundle.sh 0.2`.
+`SIGN_IDENTITY="<cert name>" scripts/bundle.sh 0.2`, or put
+`SIGN_IDENTITY="<cert name>"` in `.env` (git-ignored) to make it the default.
 
 If the DMG ever arrives via browser or AirDrop, run
 `xattr -dr com.apple.quarantine /Applications/BambooTime.app` once.

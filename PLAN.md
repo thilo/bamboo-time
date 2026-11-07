@@ -191,7 +191,9 @@ scripts/make-icon.swift       # draws the icon, runs iconutil
   Command Line Tools alone can't run SwiftPM's default build system or Swift
   Testing) → `swift build -c release` → `build/dmg/BambooTime.app` (binary,
   `Info.plist` with the version stamped in, icon in `Resources/`) →
-  `codesign --force --sign "${SIGN_IDENTITY:--}"` (ad-hoc by default) →
+  `codesign --force --sign "${SIGN_IDENTITY:--}"` (ad-hoc unless
+  `SIGN_IDENTITY` is set in the environment or in the git-ignored `.env`,
+  which the script sources if present) →
   `hdiutil create -format UDZO build/BambooTime.dmg` with an `Applications`
   symlink for drag-to-install; the symlink is removed from `build/dmg/`
   afterwards so editor file crawlers don't follow it into `/Applications`.

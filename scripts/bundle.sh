@@ -1,10 +1,12 @@
 #!/bin/sh
 # Build BambooTime.app and wrap it in build/BambooTime.dmg.
 # SIGN_IDENTITY=<cert name> signs with a self-signed cert instead of ad-hoc
-# (stable identity → no Keychain prompt after updates).
+# (stable identity → no Keychain prompt after updates). Set it in the
+# git-ignored .env to keep it out of the repo.
 set -eu
 VERSION="${1:?usage: scripts/bundle.sh VERSION}"
 cd "$(dirname "$0")/.."
+[ -f .env ] && . ./.env
 # The Command Line Tools alone lack parts of the toolchain; prefer Xcode if installed.
 XCODE=/Applications/Xcode.app/Contents/Developer
 [ -z "${DEVELOPER_DIR:-}" ] && [ -d "$XCODE" ] && export DEVELOPER_DIR="$XCODE"
