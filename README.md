@@ -12,7 +12,7 @@ company's hours for that weekday). If time off can't be read, the line says
 
 ## Build & install
 
-Needs Xcode with its license accepted (`sudo xcodebuild -license accept`).
+Needs Xcode.
 
 ```sh
 scripts/bundle.sh 0.1        # → build/BambooTime.dmg
