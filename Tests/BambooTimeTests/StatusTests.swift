@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Testing
 @testable import BambooTime
 
@@ -97,4 +98,9 @@ private func decode<T: Decodable>(_ json: String) throws -> T { try bambooDecode
     #expect(isValidDomain("my-co1"))
     #expect(!isValidDomain("evil.com/x"))
     #expect(!isValidDomain(""))
+}
+
+@Test func pkceChallengeMatchesRFC7636() {
+    let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+    #expect(base64URL(Data(SHA256.hash(data: Data(verifier.utf8)))) == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
 }

@@ -26,13 +26,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.autoenablesItems = false
         statusItem.menu = menu
         configure()
+        if client == nil {  // first run: the ⚙ is easy to miss; open once launching has finished
+            RunLoop.main.perform { MainActor.assumeIsolated { self.openSettings() } }
+        }
     }
 
     // MARK: Refresh
 
     private func configure() {
-        let key = Keychain.read() ?? ""
-        client = Prefs.domain.isEmpty || key.isEmpty ? nil : BambooClient(domain: Prefs.domain, apiKey: key)
+        client = if !Prefs.domain.isEmpty, Keychain.read() != nil, let config = OAuthConfig.current {
+            BambooClient(domain: Prefs.domain, tokens: TokenStore(domain: Prefs.domain, config: config))
+        } else { nil }
         entries = nil
         timeOffWeek = nil
         hoursPerDay = nil
@@ -136,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             menu.addItem(error.map { row("⚠ \($0)", color: .systemRed) } ?? row("Loading…", color: .secondaryLabelColor))
         }
-        if paused { menu.addItem(row("Auto-refresh paused — check API key", color: .secondaryLabelColor)) }
+        if paused { menu.addItem(row("Auto-refresh paused — check Settings", color: .secondaryLabelColor)) }
 
         if let summary {
             menu.addItem(.separator())
@@ -242,7 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openSettings() {
-        if runSettingsDialog() { configure() }
+        showSettings { [weak self] in self?.configure() }
     }
 
     private func alert(_ title: String, _ text: String) {

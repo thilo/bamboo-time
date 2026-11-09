@@ -14,8 +14,8 @@ enum BambooError: LocalizedError {
         case .invalidDomain: return "Invalid company domain"
         case .http(let code, let detail):
             let base = switch code {
-            case 401: "Unauthorized: check your API key"
-            case 403: "Forbidden: API key disabled or lacks permission"
+            case 401: "Unauthorized: sign in again in Settings"
+            case 403: "Forbidden: access disabled or lacks permission"
             case 404: "Not found (not clocked in?)"
             case 409: "Conflict: already clocked in/out"
             case 422: "Validation error (time tracking configuration?)"
@@ -29,15 +29,15 @@ enum BambooError: LocalizedError {
 
 struct BambooClient: Sendable {
     let domain: String
-    let apiKey: String
+    let tokens: TokenStore
 
-    private static let session: URLSession = {
+    static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 10
         return URLSession(configuration: config)
     }()
 
-    /// GET /employees/0 resolves to the API key's owner.
+    /// GET /employees/0 resolves to the signed-in user.
     func selfEmployeeId() async throws -> Int {
         struct Me: Decodable { let id: Flex }  // id may be a number or a string
         return Int(try await (get("/employees/0") as Me).id.value)
@@ -86,7 +86,7 @@ struct BambooClient: Sendable {
 
         var req = URLRequest(url: url)
         req.httpMethod = method
-        req.setValue("Basic " + Data("\(apiKey):x".utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")
+        req.setValue("Bearer " + (try await tokens.bearer()), forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body {
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -99,10 +99,10 @@ struct BambooClient: Sendable {
         return data
     }
 
-    /// BambooHR error bodies are JSON problem details.
-    private static func detail(_ data: Data) -> String? {
+    /// BambooHR error bodies are JSON problem details; OAuth errors use error_description.
+    static func detail(_ data: Data) -> String? {
         let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        return (obj?["detail"] ?? obj?["title"] ?? obj?["message"]) as? String
+        return (obj?["detail"] ?? obj?["title"] ?? obj?["message"] ?? obj?["error_description"] ?? obj?["error"]) as? String
     }
 }
 

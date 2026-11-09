@@ -4,7 +4,7 @@ Spec for (re)implementing this app. User-facing docs (install, setup, dev
 commands) live in [README.md](README.md); don't duplicate them here.
 
 > **Targets:** macOS 14+ · Swift 6 · AppKit `NSStatusItem` (no SwiftUI) ·
-> SwiftPM only (no Xcode project) · API key auth · zero third-party
+> SwiftPM only (no Xcode project) · OAuth sign-in · zero third-party
 > dependencies · personal use (no notarization).
 >
 > **Requirements beyond the features:**
@@ -55,29 +55,30 @@ Menu bar:   ● 4h 12m      (clocked in: circle.fill tinted green + today's tota
 - **Errors:** with stale data, a red `⚠ …` row under the top item; with no
   data, the error is the top row. Clock in/out and Launch at Login failures
   show an `NSAlert` (a menu row would go unseen; the menu closes on click).
-- **401/403:** pause auto-refresh and show `Auto-refresh paused — check API key`
-  (BambooHR disables API access after repeated bad keys). Menu open or Refresh
+- **401/403:** pause auto-refresh and show `Auto-refresh paused — check Settings`
+  (BambooHR disables API access after repeated bad credentials). Menu open or Refresh
   still retries; success resumes.
 - **Not configured:** `Not configured` row + Settings…, Launch at Login, Quit.
+  At launch, open the settings dialog right away (the ⚙ is easy to miss).
   Saving settings starts everything without a relaunch.
 - **Refresh:** on launch, on menu open (render cached data first so live
   durations update, then refresh in place), after clock in/out, and in a loop:
   60s while clocked in, 300s otherwise.
-- **Settings:** `NSAlert` with a domain field and an `NSSecureTextField`.
+- **Settings:** `NSAlert` with a domain field and a **Sign In** button.
   Normalize the domain (`acme`, `acme.bamboohr.com` and a full URL all become
-  `acme`), validate `[a-z0-9-]`, require a key, save the key to the Keychain;
-  on failure re-show the dialog with a `⚠` message.
+  `acme`), validate `[a-z0-9-]`, run the OAuth flow (§2a). On failure
+  (including a cancelled browser sheet) re-show the dialog with a `⚠`
+  message. OAuth, not API keys: normal employees usually can't create keys.
 - **Launch at Login:** menu toggle via `SMAppService.mainApp`, checkmark from its status.
 
 ## 2. BambooHR API (verified against the live API)
 
-Base URL `https://{companyDomain}.bamboohr.com/api/v1`. Basic auth with
-username = API key and password = `x`. Send `Accept: application/json`
-(some endpoints default to XML).
+Base URL `https://{companyDomain}.bamboohr.com/api/v1`. Auth: `Bearer
+{access token}` (§2a). Send `Accept: application/json` (some endpoints default to XML).
 
 | Purpose | Endpoint | Facts |
 | --- | --- | --- |
-| Identify self | `GET /employees/0` | `0` = the key's owner; `id` may be a number or a string. Cache it (reset on settings save). |
+| Identify self | `GET /employees/0` | `0` = the signed-in user; `id` may be a number or a string. Cache it (reset on settings save). |
 | Clock + manual entries | `GET /time_tracking/timesheet_entries?start={day before week start}&end={tomorrow}&employeeIds={id}` | Flat, unpaginated array `{type: "clock"\|"hour", date, start, end, timezone, hours}`. Includes the **open** clock entry (`end: null`, `hours: null`). A future `end` is accepted; `start` must be within the last 365 days. Dates like `2026-11-06T07:43:00+00:00` (plain ISO 8601). Use this instead of `/time-tracking/clock-entries`, which has clock entries only. |
 | Time off | `GET /time_off/requests?start={week start}&end={today}&employeeId={id}&status=approved&excludeNote=1` | `amount.unit` is `hours` or `days`; `dates` maps YYYY-MM-DD to the amount that day. Numbers may arrive as strings. `employeeId=0` is **not** supported (returns `[]`). |
 | Hours per day | `GET /meta/time_off/types` | `defaultHours: [{name: "Monday", amount: "8"}, …]` (amount is a string). Fetch once; retry on later refreshes while it fails. |
@@ -88,7 +89,36 @@ Errors are JSON problem details (`detail`/`title`/`message`). Map 401, 403,
 404, 409, 422 and 429 to a short explanation and append the server's detail.
 
 **Prerequisites:** Time Tracking with clock in/out enabled (timesheet type
-`CLOCK`), and an API user who can view and edit timesheets.
+`CLOCK`), and a user who can view and edit their own timesheet.
+
+### 2a. OAuth
+
+- App registered on developers.bamboohr.com (self-service); client id, optional
+  secret and redirect URI come from `BAMBOO_CLIENT_ID` (required by
+  `bundle.sh`), `BAMBOO_CLIENT_SECRET`, `BAMBOO_REDIRECT_URI` (default
+  `bambootime://oauth`) at build time, stamped into `Info.plist`
+  (`BambooClientID`, `BambooClientSecret`, `BambooRedirectURI`). No bundle
+  (`swift run`) = sign-in unavailable.
+- Server metadata (`/.well-known/oauth-authorization-server` on the company
+  domain): authorization code + refresh token grants, PKCE `S256`, token auth
+  `client_secret_post`/`client_secret_basic`/`none`.
+- Authorize: `https://{domain}.bamboohr.com/authorize.php?request=authorize`
+  with `response_type=code`, `client_id`, `redirect_uri`, `scope`, `state`,
+  `code_challenge`, `code_challenge_method=S256`. Scopes, exactly what §2
+  calls: `offline_access` (else no refresh token), `employee:name`
+  (`/employees/0`), `time_tracking` (timesheet entries),
+  `time_tracking:timesheets.write` (clock-ins/outs), `time_off` (requests, types).
+- Run it in `ASWebAuthenticationSession` with callback scheme `bambootime`,
+  not ephemeral (reuses the browser's BambooHR/SSO login; no local server, no
+  URL-scheme registration). Check `state`; `error`/`error_description` in the
+  callback become the dialog's message.
+- Token: `POST https://{domain}.bamboohr.com/token.php?request=token`,
+  form-encoded `grant_type`, `code` + `code_verifier` or `refresh_token`,
+  `client_id`, `client_secret` (if any), `redirect_uri`. Response
+  `{access_token, expires_in: 3600, refresh_token}`; errors `{error, error_description}`.
+- Keep only the refresh token (Keychain account `refresh-token`); the access
+  token lives in memory in a `TokenStore` actor, refreshed 60 s before expiry,
+  one refresh shared by concurrent requests, a rotated refresh token is saved.
 
 ## 3. Calculation rules
 
@@ -120,7 +150,7 @@ flowchart TD
     E -->|render| B
     F[Task.sleep loop<br/>60s in / 300s out] --> C
     G[Clock In/Out item] -->|POST| D
-    H[UserDefaults: domain, employee id<br/>Keychain: API key] --> D
+    H[UserDefaults: domain, employee id<br/>Keychain: refresh token] --> D
 ```
 
 - **AppKit `NSStatusItem` + `NSMenu`, not SwiftUI `MenuBarExtra`:**
@@ -150,11 +180,11 @@ flowchart TD
 - **`URLSession`:** ephemeral (no disk cache), 10s request timeout. One generic
   `get(path, query)` decodes all GETs; `JSONDecoder` `.iso8601`; a `Flex`
   type decodes number-or-string values.
-- **API key in the Keychain** (generic password, service = bundle id,
-  account `api-key`), never in UserDefaults.
-- **Not doing** (add only on demand): OAuth (needs a registered app on
-  developers.bamboohr.com plus an embedded client secret, and the refresh
-  token would still sit in the Keychain), notifications, configurable
+- **Refresh token in the Keychain** (generic password, service = bundle id,
+  account `refresh-token`), never in UserDefaults.
+- **Client secret embedded in the app** if the portal app needs one: fine
+  for an internal build; a public PKCE client avoids it.
+- **Not doing** (add only on demand): notifications, configurable
   intervals, Sparkle, Homebrew, CI, notarization.
 
 ## 5. Files
@@ -166,9 +196,10 @@ Sources/BambooTime/
   BambooClient.swift          # API client, BambooError, domain normalize/validate
   Status.swift                # TimesheetEntry, Summary, summarize, time off, date helpers, formatting, decoder
   Settings.swift              # Prefs (UserDefaults), Keychain, settings dialog
+  OAuth.swift                 # OAuthConfig, TokenStore, token request, signIn (PKCE + ASWebAuthenticationSession)
 Tests/BambooTimeTests/
   StatusTests.swift           # Swift Testing, pure logic + live payload shapes
-  LiveTests.swift             # real API; enabled only when BAMBOO_KEY is set
+  LiveTests.swift             # real API with the stored refresh token; enabled only when BAMBOO_CLIENT_ID is set
 Support/Info.plist            # LSUIElement, CFBundleIdentifier me.thilo.bamboo-time, CFBundleIconFile, __VERSION__
 Support/AppIcon.icns          # generated by scripts/make-icon.swift, checked in
 scripts/bundle.sh             # build → .app → sign → DMG
@@ -195,7 +226,8 @@ scripts/make-icon.swift       # draws the icon, runs iconutil
   `SIGN_IDENTITY` is set in the environment or in the git-ignored `.env`,
   which the script sources if present) →
   `hdiutil create -format UDZO build/BambooTime.dmg` with an `Applications`
-  symlink for drag-to-install; the symlink is removed from `build/dmg/`
+  symlink for drag-to-install and `Support/Instructions.md` (first-run
+  Gatekeeper steps, sign-in); the symlink is removed from `build/dmg/`
   afterwards so editor file crawlers don't follow it into `/Applications`.
 - Icon: white lowercase "b" whose bowl is a clock face (10:10) on a green
   rounded square (824 pt body on a 1024 grid), drawn with Core Graphics at all
@@ -206,7 +238,8 @@ scripts/make-icon.swift       # draws the icon, runs iconutil
 - **Unit tests:** empty day; closed + open today with yesterday excluded;
   open entry from yesterday; per-entry timezone at midnight; week total with
   manual entries; time off in hours and in days with a non-8h day; duration
-  formatting; live payload shapes (closed, open, `Z` offset); domain normalization.
+  formatting; live payload shapes (closed, open, `Z` offset); domain
+  normalization; PKCE challenge (RFC 7636 test vector).
 - **Live test** (`LiveTests.swift`): runs the real client and summing, prints
   the week's entries, and optionally asserts `BAMBOO_EXPECT_WEEK` against
   BambooHR's displayed weekly total. Reference: 47h 50m = 7h 50m clocked +
@@ -214,7 +247,8 @@ scripts/make-icon.swift       # draws the icon, runs iconutil
 - **App:** clock in → green label that ticks; clock out → total freezes;
   relaunch while clocked in → state restored from the API; sleep > 5 min and
   wake → one clean refresh; replace the app with a rebuilt one → settings and
-  key survive; Launch at Login survives a logout.
+  sign-in survive; Launch at Login survives a logout; sign in through an SSO
+  account; after an hour (access token expired) a refresh still works.
 - **Resources:** measure with `footprint -p $(pgrep -x BambooTime)`, not RSS
   (~80 MB, counts shared frameworks). Target < 20 MB, ~0% CPU idle.
 
