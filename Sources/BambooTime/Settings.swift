@@ -60,21 +60,20 @@ func showSettings(problem: String? = nil, done: @escaping @MainActor () -> Void)
     // NSApp.activate(); a panel would then stay hidden.
     alert.window.hidesOnDeactivate = false
     alert.window.level = .floating
+    guard let config = OAuthConfig.current else { return }  // `swift run`: no bundle, no sign-in
     var problem = problem
     var d = ""
-    var config: OAuthConfig?
     repeat {
         alert.informativeText = problem.map { "⚠ \($0)" }
             ?? "Enter your company domain, then sign in with your BambooHR account."
         NSApp.activate()
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         d = normalizeDomain(domain.stringValue)
-        config = OAuthConfig.current
-        problem = !isValidDomain(d) ? "Invalid company domain" : config == nil ? "This build has no BambooHR client id" : nil
+        problem = isValidDomain(d) ? nil : "Invalid company domain"
     } while problem != nil
 
     Task {
-        do { try await signIn(domain: d, config: config!) } catch {
+        do { try await signIn(domain: d, config: config) } catch {
             let message = (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin
                 ? "Sign-in cancelled" : "Sign-in failed: \(error.localizedDescription)"
             // Leave the Task before the dialog's modal loop (see above).

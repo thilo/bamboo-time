@@ -6,21 +6,17 @@ import Foundation
 /// OAuth app registered on developers.bamboohr.com, stamped into Info.plist by bundle.sh.
 struct OAuthConfig: Sendable {
     let clientId: String
-    let clientSecret: String?  // nil for a public client (PKCE only)
-    let redirectURI: String
+    let clientSecret: String
     static let callbackScheme = "bambootime"
+    static let redirectURI = "\(callbackScheme)://oauth"  // registered in the portal
     /// Scopes for exactly the endpoints BambooClient calls; offline_access yields the refresh token.
     static let scopes = "offline_access employee:name time_tracking time_tracking:timesheets.write time_off"
 
-    /// nil without a bundle (`swift run`); bundle.sh requires a client id.
+    /// nil without a bundle (`swift run`); bundle.sh requires both values.
     static let current: OAuthConfig? = {
         let info = Bundle.main.infoDictionary ?? [:]
-        func value(_ key: String) -> String? {
-            (info[key] as? String).flatMap { $0.isEmpty || $0.hasPrefix("__") ? nil : $0 }
-        }
-        guard let id = value("BambooClientID") else { return nil }
-        return OAuthConfig(clientId: id, clientSecret: value("BambooClientSecret"),
-                           redirectURI: value("BambooRedirectURI") ?? "\(callbackScheme)://oauth")
+        guard let id = info["BambooClientID"] as? String, let secret = info["BambooClientSecret"] as? String else { return nil }
+        return OAuthConfig(clientId: id, clientSecret: secret)
     }()
 }
 
@@ -67,7 +63,7 @@ func tokenRequest(domain: String, config: OAuthConfig, _ params: [String: String
     var form = params
     form["client_id"] = config.clientId
     form["client_secret"] = config.clientSecret
-    form["redirect_uri"] = config.redirectURI
+    form["redirect_uri"] = OAuthConfig.redirectURI
     var c = URLComponents()
     c.queryItems = form.map { URLQueryItem(name: $0.key, value: $0.value) }
     var req = URLRequest(url: url)
@@ -94,7 +90,7 @@ func signIn(domain: String, config: OAuthConfig) async throws {
         .init(name: "request", value: "authorize"),
         .init(name: "response_type", value: "code"),
         .init(name: "client_id", value: config.clientId),
-        .init(name: "redirect_uri", value: config.redirectURI),
+        .init(name: "redirect_uri", value: OAuthConfig.redirectURI),
         .init(name: "scope", value: OAuthConfig.scopes),
         .init(name: "state", value: state),
         .init(name: "code_challenge", value: challenge),
@@ -132,10 +128,9 @@ private final class BrowserSession: NSObject, ASWebAuthenticationPresentationCon
     }
 }
 
+/// SystemRandomNumberGenerator is cryptographically secure.
 private func randomURLSafe(_ bytes: Int) -> String {
-    var data = Data(count: bytes)
-    _ = data.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, bytes, $0.baseAddress!) }
-    return base64URL(data)
+    base64URL(Data((0..<bytes).map { _ in UInt8.random(in: .min ... .max) }))
 }
 
 func base64URL(_ data: Data) -> String {

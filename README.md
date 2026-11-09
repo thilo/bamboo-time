@@ -20,8 +20,7 @@ credentials in `.env` (git-ignored):
 
 ```sh
 BAMBOO_CLIENT_ID="…"
-BAMBOO_CLIENT_SECRET="…"   # omit if the app is a public (PKCE-only) client
-# BAMBOO_REDIRECT_URI="…"  # only if the portal rejects bambootime://oauth
+BAMBOO_CLIENT_SECRET="…"
 ```
 
 The secret ships inside the app, so treat the build as internal.

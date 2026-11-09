@@ -93,12 +93,12 @@ Errors are JSON problem details (`detail`/`title`/`message`). Map 401, 403,
 
 ### 2a. OAuth
 
-- App registered on developers.bamboohr.com (self-service); client id, optional
-  secret and redirect URI come from `BAMBOO_CLIENT_ID` (required by
-  `bundle.sh`), `BAMBOO_CLIENT_SECRET`, `BAMBOO_REDIRECT_URI` (default
-  `bambootime://oauth`) at build time, stamped into `Info.plist`
-  (`BambooClientID`, `BambooClientSecret`, `BambooRedirectURI`). No bundle
-  (`swift run`) = sign-in unavailable.
+- App registered on developers.bamboohr.com (self-service) with redirect URI
+  `bambootime://oauth` (a constant in the code). Client id and secret come
+  from `BAMBOO_CLIENT_ID` and `BAMBOO_CLIENT_SECRET` (both required by
+  `bundle.sh`) at build time, stamped into `Info.plist` (`BambooClientID`,
+  `BambooClientSecret`). No bundle (`swift run`) = no sign-in; Settings
+  doesn't open.
 - Server metadata (`/.well-known/oauth-authorization-server` on the company
   domain): authorization code + refresh token grants, PKCE `S256`, token auth
   `client_secret_post`/`client_secret_basic`/`none`.
@@ -114,7 +114,7 @@ Errors are JSON problem details (`detail`/`title`/`message`). Map 401, 403,
   callback become the dialog's message.
 - Token: `POST https://{domain}.bamboohr.com/token.php?request=token`,
   form-encoded `grant_type`, `code` + `code_verifier` or `refresh_token`,
-  `client_id`, `client_secret` (if any), `redirect_uri`. Response
+  `client_id`, `client_secret`, `redirect_uri`. Response
   `{access_token, expires_in: 3600, refresh_token}`; errors `{error, error_description}`.
 - Keep only the refresh token (Keychain account `refresh-token`); the access
   token lives in memory in a `TokenStore` actor, refreshed 60 s before expiry,
@@ -182,8 +182,7 @@ flowchart TD
   type decodes number-or-string values.
 - **Refresh token in the Keychain** (generic password, service = bundle id,
   account `refresh-token`), never in UserDefaults.
-- **Client secret embedded in the app** if the portal app needs one: fine
-  for an internal build; a public PKCE client avoids it.
+- **Client secret embedded in the app:** fine for an internal build.
 - **Not doing** (add only on demand): notifications, configurable
   intervals, Sparkle, Homebrew, CI, notarization.
 

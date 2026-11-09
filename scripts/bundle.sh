@@ -3,13 +3,14 @@
 # SIGN_IDENTITY=<cert name> signs with a self-signed cert instead of ad-hoc
 # (stable identity → no Keychain prompt after updates). Set it in the
 # git-ignored .env to keep it out of the repo.
-# BAMBOO_CLIENT_ID (required), BAMBOO_CLIENT_SECRET and BAMBOO_REDIRECT_URI come
-# from the OAuth app on developers.bamboohr.com, usually via .env.
+# BAMBOO_CLIENT_ID and BAMBOO_CLIENT_SECRET (required) come from the OAuth app
+# on developers.bamboohr.com, usually via .env.
 set -eu
 VERSION="${1:?usage: scripts/bundle.sh VERSION}"
 cd "$(dirname "$0")/.."
 [ -f .env ] && . ./.env
 : "${BAMBOO_CLIENT_ID:?set BAMBOO_CLIENT_ID (OAuth app on developers.bamboohr.com) in .env}"
+: "${BAMBOO_CLIENT_SECRET:?set BAMBOO_CLIENT_SECRET in .env}"
 # The Command Line Tools alone lack parts of the toolchain; prefer Xcode if installed.
 XCODE=/Applications/Xcode.app/Contents/Developer
 [ -z "${DEVELOPER_DIR:-}" ] && [ -d "$XCODE" ] && export DEVELOPER_DIR="$XCODE"
@@ -25,7 +26,7 @@ cp Support/AppIcon.icns "$APP/Contents/Resources/"
 cp Support/Instructions.md build/dmg/
 # ponytail: values must not contain "|", "&" or "\\" (sed); BambooHR ids/secrets are alphanumeric.
 sed -e "s|__VERSION__|$VERSION|g" -e "s|__CLIENT_ID__|$BAMBOO_CLIENT_ID|" \
-    -e "s|__CLIENT_SECRET__|${BAMBOO_CLIENT_SECRET:-}|" -e "s|__REDIRECT_URI__|${BAMBOO_REDIRECT_URI:-bambootime://oauth}|" \
+    -e "s|__CLIENT_SECRET__|$BAMBOO_CLIENT_SECRET|" \
     Support/Info.plist > "$APP/Contents/Info.plist"
 codesign --force --sign "${SIGN_IDENTITY:--}" "$APP"
 
