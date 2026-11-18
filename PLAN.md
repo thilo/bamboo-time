@@ -54,7 +54,8 @@ Menu bar:   ● 4h 12m      (clocked in: circle.fill tinted green + today's tota
 - **Errors:** with stale data, a red `⚠ …` row under the top item; with no
   data, the error is the top row. Clock in/out and Launch at Login failures
   show an `NSAlert` (a menu row would go unseen; the menu closes on click).
-- **401/403:** pause auto-refresh and show `Auto-refresh paused — check Settings`
+- **401/403** (and `invalid_grant` from the token endpoint, a revoked refresh
+  token): pause auto-refresh and show `Auto-refresh paused — check Settings`
   (BambooHR disables API access after repeated bad credentials). Menu open still
   retries; success resumes.
 - **Open BambooHR Timesheet:** opens

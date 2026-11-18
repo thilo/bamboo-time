@@ -74,7 +74,12 @@ func tokenRequest(domain: String, config: OAuthConfig, _ params: [String: String
     req.httpBody = Data((c.percentEncodedQuery ?? "").replacingOccurrences(of: "+", with: "%2B").utf8)
     let (data, response) = try await BambooClient.session.data(for: req)
     let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-    guard (200..<300).contains(code) else { throw BambooError.http(code, BambooClient.detail(data)) }
+    guard (200..<300).contains(code) else {
+        // A revoked or expired refresh token comes back as 400 invalid_grant (RFC 6749 §5.2);
+        // report it as 401 so auto-refresh pauses instead of retrying.
+        let error = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
+        throw BambooError.http(error == "invalid_grant" ? 401 : code, BambooClient.detail(data))
+    }
     return try JSONDecoder().decode(TokenResponse.self, from: data)
 }
 

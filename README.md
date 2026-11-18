@@ -65,8 +65,8 @@ Applications.
 | ⚠               | Error and no data (details in the menu)    |
 
 Refreshes every 60 s while clocked in, every 5 min otherwise, and on menu open.
-On 401/403 auto-refresh pauses (BambooHR locks keys after repeated failures)
-until opening the menu or signing in again succeeds.
+On 401/403 or a revoked sign-in auto-refresh pauses (BambooHR locks keys after
+repeated failures) until opening the menu or signing in again succeeds.
 
 ## Repository
 
