@@ -148,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 menu.addItem(row("\(formatTime(e.start!)) – \(formatTime(e.end!))", right: formatDuration(e.duration(at: Date()))))
             }
             if let open = summary.open {
-                menu.addItem(row("\(formatTime(open.start!)) – (live)", right: formatDuration(open.duration(at: Date())), color: .systemGreen))
+                menu.addItem(row("\(formatTime(open.start!)) – (live)", right: formatDuration(open.duration(at: Date())), color: liveGreen))
             }
             if summary.closed.isEmpty && summary.open == nil {
                 menu.addItem(row("No entries today", color: .secondaryLabelColor))
@@ -192,6 +192,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
         i.target = self
         return i
+    }
+
+    /// Disabled rows are dimmed, which washes out systemGreen on the light menu; use a darker green there.
+    /// Resolved per render from the app's appearance: a dynamic color resolves against whatever appearance
+    /// is current while drawing (e.g. the menu bar's, dark over a dark wallpaper) and flips as the menu opens.
+    private var liveGreen: NSColor {
+        NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? .systemGreen : NSColor(red: 0.12, green: 0.60, blue: 0.22, alpha: 1)
     }
 
     /// Informational, non-clickable row; `right` is right-aligned at a tab stop.
