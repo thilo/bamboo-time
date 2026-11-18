@@ -41,12 +41,13 @@ enum Keychain {
 }
 
 /// Shows the settings dialog, then signs in and calls `done`; on failure the
-/// dialog comes back with the problem. Call only from AppKit callbacks, never
-/// inside a Task: a modal run loop there blocks the main queue, so every other
-/// MainActor task (rendering, refresh) and the menu bar item stall.
+/// dialog comes back with the problem and the typed domain. Call only from
+/// AppKit callbacks, never inside a Task: a modal run loop there blocks the
+/// main queue, so every other MainActor task (rendering, refresh) and the menu
+/// bar item stall.
 @MainActor
-func showSettings(problem: String? = nil, done: @escaping @MainActor () -> Void) {
-    let domain = NSTextField(string: Prefs.domain)
+func showSettings(problem: String? = nil, typed: String? = nil, done: @escaping @MainActor () -> Void) {
+    let domain = NSTextField(string: typed ?? Prefs.domain)
     domain.placeholderString = "mycompany (from mycompany.bamboohr.com)"
     domain.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
 
@@ -77,7 +78,7 @@ func showSettings(problem: String? = nil, done: @escaping @MainActor () -> Void)
             let message = (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin
                 ? "Sign-in cancelled" : "Sign-in failed: \(error.localizedDescription)"
             // Leave the Task before the dialog's modal loop (see above).
-            RunLoop.main.perform { MainActor.assumeIsolated { showSettings(problem: message, done: done) } }
+            RunLoop.main.perform { MainActor.assumeIsolated { showSettings(problem: message, typed: d, done: done) } }
             return
         }
         Prefs.domain = d
