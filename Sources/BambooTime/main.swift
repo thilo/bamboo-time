@@ -11,7 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var error: String?
     private var timeOffWeek: TimeInterval?  // nil = couldn't fetch
     private var hoursPerDay: [String: Double]?  // company schedule, fetched once per configure
-    private var paused = false           // after 401/403: stop auto-refresh until a manual one succeeds
+    private var paused = false           // after 401/403: stop auto-refresh until one on menu open succeeds
     private var busy = false             // clock in/out POST in flight
     private var loop: Task<Void, Never>?
     private var inFlight: Task<Void, Never>?
@@ -26,13 +26,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.autoenablesItems = false
         statusItem.menu = menu
         configure()
+        if client == nil {  // first run: the ⚙ is easy to miss; open once launching has finished
+            RunLoop.main.perform { MainActor.assumeIsolated { self.openSettings() } }
+        }
     }
 
     // MARK: Refresh
 
     private func configure() {
-        let key = Keychain.read() ?? ""
-        client = Prefs.domain.isEmpty || key.isEmpty ? nil : BambooClient(domain: Prefs.domain, apiKey: key)
+        client = if !Prefs.domain.isEmpty, Keychain.read() != nil, let config = OAuthConfig.current {
+            BambooClient(domain: Prefs.domain, tokens: TokenStore(domain: Prefs.domain, config: config))
+        } else { nil }
         entries = nil
         timeOffWeek = nil
         hoursPerDay = nil
@@ -126,6 +130,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard client != nil else {
             menu.addItem(row("Not configured", color: .secondaryLabelColor))
             menu.addItem(.separator())
+            menu.addItem(timesheetItem())
+            menu.addItem(.separator())
             addFooter()
             return
         }
@@ -136,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             menu.addItem(error.map { row("⚠ \($0)", color: .systemRed) } ?? row("Loading…", color: .secondaryLabelColor))
         }
-        if paused { menu.addItem(row("Auto-refresh paused — check API key", color: .secondaryLabelColor)) }
+        if paused { menu.addItem(row("Auto-refresh paused — check Settings", color: .secondaryLabelColor)) }
 
         if let summary {
             menu.addItem(.separator())
@@ -144,7 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 menu.addItem(row("\(formatTime(e.start!)) – \(formatTime(e.end!))", right: formatDuration(e.duration(at: Date()))))
             }
             if let open = summary.open {
-                menu.addItem(row("\(formatTime(open.start!)) – (live)", right: formatDuration(open.duration(at: Date())), color: .systemGreen))
+                menu.addItem(row("\(formatTime(open.start!)) – (live)", right: formatDuration(open.duration(at: Date())), color: liveGreen))
             }
             if summary.closed.isEmpty && summary.open == nil {
                 menu.addItem(row("No entries today", color: .secondaryLabelColor))
@@ -156,8 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                              right: formatDuration(summary.week + (timeOffWeek ?? 0))))
         }
         menu.addItem(.separator())
-        menu.addItem(item("Refresh", #selector(manualRefresh), "r"))
-        menu.addItem(item("Open BambooHR", #selector(openBamboo)))
+        menu.addItem(timesheetItem())
         menu.addItem(.separator())
         addFooter()
     }
@@ -176,6 +181,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return i
     }
 
+    /// Disabled until signed in and the employee id is known (it is part of the URL).
+    private func timesheetItem() -> NSMenuItem {
+        let i = item("Open BambooHR Timesheet", #selector(openTimesheet))
+        i.isEnabled = client != nil && Prefs.employeeId != 0
+        return i
+    }
+
     private func addFooter() {
         menu.addItem(item("Settings…", #selector(openSettings), ","))
         let login = item("Launch at Login", #selector(toggleLogin))
@@ -188,6 +200,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
         i.target = self
         return i
+    }
+
+    /// Disabled rows are dimmed, which washes out systemGreen on the light menu; use a darker green there.
+    /// Resolved per render from the app's appearance: a dynamic color resolves against whatever appearance
+    /// is current while drawing (e.g. the menu bar's, dark over a dark wallpaper) and flips as the menu opens.
+    private var liveGreen: NSColor {
+        NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? .systemGreen : NSColor(red: 0.12, green: 0.60, blue: 0.22, alpha: 1)
     }
 
     /// Informational, non-clickable row; `right` is right-aligned at a tab stop.
@@ -209,10 +229,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task { await refresh() }
     }
 
-    @objc private func manualRefresh() {
-        Task { await refresh() }
-    }
-
     @objc private func toggleClock() {
         guard let client, !busy else { return }
         let clockingOut = clockedIn
@@ -230,8 +246,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func openBamboo() {
-        if let url = URL(string: "https://\(Prefs.domain).bamboohr.com/") { NSWorkspace.shared.open(url) }
+    @objc private func openTimesheet() {
+        if let url = URL(string: "https://\(Prefs.domain).bamboohr.com/employees/timesheet/?id=\(Prefs.employeeId)") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func toggleLogin() {
@@ -242,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openSettings() {
-        if runSettingsDialog() { configure() }
+        showSettings { [weak self] in self?.configure() }
     }
 
     private func alert(_ title: String, _ text: String) {

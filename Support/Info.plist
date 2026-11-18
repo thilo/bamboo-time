@@ -3,6 +3,8 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleExecutable</key><string>BambooTime</string>
+	<key>BambooClientID</key><string>__CLIENT_ID__</string>
+	<key>BambooClientSecret</key><string>__CLIENT_SECRET__</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundleIdentifier</key><string>me.thilo.bamboo-time</string>
 	<key>CFBundleName</key><string>BambooTime</string>

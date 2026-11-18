@@ -12,7 +12,18 @@ company's hours for that weekday). If time off can't be read, the line says
 
 ## Build & install
 
-Needs Xcode.
+Needs Xcode and an OAuth app on
+[developers.bamboohr.com](https://developers.bamboohr.com) (free, self-service):
+redirect URI `bambootime://oauth`, scopes `offline_access`, `employee:name`,
+`time_tracking`, `time_tracking:timesheets.write` and `time_off`. Put its
+credentials in `.env` (git-ignored):
+
+```sh
+BAMBOO_CLIENT_ID="…"
+BAMBOO_CLIENT_SECRET="…"
+```
+
+The secret ships inside the app, so treat the build as internal.
 
 ```sh
 scripts/bundle.sh 0.1        # → build/BambooTime.dmg
@@ -21,11 +32,13 @@ open build/BambooTime.dmg    # drag BambooTime to Applications
 
 Update: `git pull && scripts/bundle.sh 0.2`, quit BambooTime, drag the new copy
 over the old one. After each update macOS asks once to allow Keychain access
-to the API key: click **Always Allow**. To stop that prompt, create a
+to the sign-in token: click **Always Allow**. To stop that prompt, create a
 self-signed code-signing certificate (Keychain Access → Certificate Assistant
 → Create a Certificate, type "Code Signing") and build with
 `SIGN_IDENTITY="<cert name>" scripts/bundle.sh 0.2`, or put
 `SIGN_IDENTITY="<cert name>"` in `.env` (git-ignored) to make it the default.
+
+
 
 If the DMG ever arrives via browser or AirDrop, run
 `xattr -dr com.apple.quarantine /Applications/BambooTime.app` once.
@@ -34,7 +47,8 @@ If the DMG ever arrives via browser or AirDrop, run
 
 Menu bar gear icon → **Settings…**:
 - **Company domain**: `mycompany` from `mycompany.bamboohr.com`
-- **API key**: BambooHR → your profile menu → API Keys (stored in the Keychain)
+- **Sign In**: log in to BambooHR in the browser sheet and allow access. The
+  refresh token is stored in the Keychain.
 
 Your employee id is detected automatically. Requires Time Tracking with clock
 in/out enabled for your account. Turn on **Launch at Login** from the copy in
@@ -51,8 +65,8 @@ Applications.
 | ⚠               | Error and no data (details in the menu)    |
 
 Refreshes every 60 s while clocked in, every 5 min otherwise, and on menu open.
-On 401/403 auto-refresh pauses (BambooHR locks keys after repeated failures);
-use **Refresh** after fixing the key.
+On 401/403 or a revoked sign-in auto-refresh pauses (BambooHR locks keys after
+repeated failures) until opening the menu or signing in again succeeds.
 
 ## Repository
 
@@ -65,8 +79,8 @@ facts, calculation rules and design decisions.
 
 ```sh
 swift test                     # unit tests (live test skipped)
-BAMBOO_DOMAIN=mycompany BAMBOO_KEY=$(security find-generic-password -s me.thilo.bamboo-time -a api-key -w) \
-  swift test --filter live     # real API: prints this week's entries and total
+set -a; . ./.env; set +a; BAMBOO_DOMAIN=mycompany \
+  swift test --filter live     # real API with the app's stored sign-in: prints this week's entries and total
 # add BAMBOO_EXPECT_WEEK="47h 50m" to assert BambooHR's weekly total
 swift run                      # run unbundled (Keychain and Launch at Login need the .app)
 swift scripts/make-icon.swift  # regenerate Support/AppIcon.icns
@@ -75,8 +89,6 @@ swift scripts/make-icon.swift  # regenerate Support/AppIcon.icns
 If `xcode-select` points at the Command Line Tools, prefix these with
 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` (`bundle.sh` does that itself).
 
-Check the API directly:
-`curl -u "$KEY:x" -H "Accept: application/json" https://mycompany.bamboohr.com/api/v1/employees/0`
 
 ## License
 

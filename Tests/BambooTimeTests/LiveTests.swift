@@ -2,12 +2,14 @@ import Foundation
 import Testing
 @testable import BambooTime
 
-/// Hits the real API with the app's code. Runs only with credentials:
-/// [BAMBOO_EXPECT_WEEK="47h 50m"] BAMBOO_DOMAIN=acme BAMBOO_KEY=$(security find-generic-password -s me.thilo.bamboo-time -a api-key -w) swift test --filter live
-@Test(.enabled(if: ProcessInfo.processInfo.environment["BAMBOO_KEY"] != nil))
+/// Hits the real API with the app's code, using the refresh token the app
+/// stored after Sign In (macOS asks for Keychain access). Runs only with:
+/// [BAMBOO_EXPECT_WEEK="47h 50m"] BAMBOO_DOMAIN=acme BAMBOO_CLIENT_ID=… BAMBOO_CLIENT_SECRET=… swift test --filter live
+@Test(.enabled(if: ProcessInfo.processInfo.environment["BAMBOO_CLIENT_ID"] != nil))
 func liveWeekTotal() async throws {
     let env = ProcessInfo.processInfo.environment
-    let client = BambooClient(domain: env["BAMBOO_DOMAIN"]!, apiKey: env["BAMBOO_KEY"]!)
+    let config = OAuthConfig(clientId: env["BAMBOO_CLIENT_ID"]!, clientSecret: env["BAMBOO_CLIENT_SECRET"]!)
+    let client = BambooClient(domain: env["BAMBOO_DOMAIN"]!, tokens: TokenStore(domain: env["BAMBOO_DOMAIN"]!, config: config))
     let id = try await client.selfEmployeeId()
     let now = Date(), tz = TimeZone.current.identifier
     let (week, today) = (dayString(weekStart(now), timeZone: tz), dayString(now, timeZone: tz))
