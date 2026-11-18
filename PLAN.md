@@ -35,7 +35,7 @@ Menu bar:   ● 4h 12m      (clocked in: circle.fill tinted green + today's tota
 │  ──────────────────────             │
 │  Total this week      34h 50m       │
 │  ──────────────────────             │
-│  Open BambooHR                      │
+│  Open BambooHR Timesheet            │
 │  ──────────────────────             │
 │  Settings…                    ⌘,    │
 │  Launch at Login              ✓     │
@@ -57,7 +57,11 @@ Menu bar:   ● 4h 12m      (clocked in: circle.fill tinted green + today's tota
 - **401/403:** pause auto-refresh and show `Auto-refresh paused — check Settings`
   (BambooHR disables API access after repeated bad credentials). Menu open still
   retries; success resumes.
-- **Not configured:** `Not configured` row + Settings…, Launch at Login, Quit.
+- **Open BambooHR Timesheet:** opens
+  `https://{domain}.bamboohr.com/employees/timesheet/?id={employeeId}`; disabled
+  until signed in and the employee id is known.
+- **Not configured:** `Not configured` row, Open BambooHR Timesheet (disabled),
+  Settings…, Launch at Login, Quit.
   At launch, open the settings dialog right away (the ⚙ is easy to miss).
   Saving settings starts everything without a relaunch.
 - **Refresh:** on launch, on menu open (render cached data first so live
@@ -210,7 +214,7 @@ scripts/make-icon.swift       # draws the icon, runs iconutil
 2. Settings: Prefs, Keychain, dialog, domain normalization; Edit menu.
 3. `BambooClient`: request helper, errors, `selfEmployeeId`, `timesheetEntries`.
 4. `summarize` + formatting + unit tests (§3, §8).
-5. Menu rendering and the refresh loop; clock in/out; Open BambooHR.
+5. Menu rendering and the refresh loop; clock in/out; Open BambooHR Timesheet.
 6. Time off + hours per day + week line; error/paused/not-configured states.
 7. Launch at Login; `bundle.sh`; icon.
 

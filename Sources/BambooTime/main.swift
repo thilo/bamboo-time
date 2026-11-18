@@ -130,6 +130,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard client != nil else {
             menu.addItem(row("Not configured", color: .secondaryLabelColor))
             menu.addItem(.separator())
+            menu.addItem(timesheetItem())
+            menu.addItem(.separator())
             addFooter()
             return
         }
@@ -160,7 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                              right: formatDuration(summary.week + (timeOffWeek ?? 0))))
         }
         menu.addItem(.separator())
-        menu.addItem(item("Open BambooHR", #selector(openBamboo)))
+        menu.addItem(timesheetItem())
         menu.addItem(.separator())
         addFooter()
     }
@@ -176,6 +178,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 .foregroundColor: NSColor.secondaryLabelColor]))
             i.attributedTitle = title
         }
+        return i
+    }
+
+    /// Disabled until signed in and the employee id is known (it is part of the URL).
+    private func timesheetItem() -> NSMenuItem {
+        let i = item("Open BambooHR Timesheet", #selector(openTimesheet))
+        i.isEnabled = client != nil && Prefs.employeeId != 0
         return i
     }
 
@@ -237,8 +246,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func openBamboo() {
-        if let url = URL(string: "https://\(Prefs.domain).bamboohr.com/") { NSWorkspace.shared.open(url) }
+    @objc private func openTimesheet() {
+        if let url = URL(string: "https://\(Prefs.domain).bamboohr.com/employees/timesheet/?id=\(Prefs.employeeId)") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func toggleLogin() {
