@@ -11,7 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var error: String?
     private var timeOffWeek: TimeInterval?  // nil = couldn't fetch
     private var hoursPerDay: [String: Double]?  // company schedule, fetched once per configure
-    private var paused = false           // after 401/403: stop auto-refresh until a manual one succeeds
+    private var paused = false           // after 401/403: stop auto-refresh until one on menu open succeeds
     private var busy = false             // clock in/out POST in flight
     private var loop: Task<Void, Never>?
     private var inFlight: Task<Void, Never>?
@@ -160,7 +160,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                              right: formatDuration(summary.week + (timeOffWeek ?? 0))))
         }
         menu.addItem(.separator())
-        menu.addItem(item("Refresh", #selector(manualRefresh), "r"))
         menu.addItem(item("Open BambooHR", #selector(openBamboo)))
         menu.addItem(.separator())
         addFooter()
@@ -218,10 +217,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         render()  // live durations
-        Task { await refresh() }
-    }
-
-    @objc private func manualRefresh() {
         Task { await refresh() }
     }
 

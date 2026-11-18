@@ -35,7 +35,6 @@ Menu bar:   ● 4h 12m      (clocked in: circle.fill tinted green + today's tota
 │  ──────────────────────             │
 │  Total this week      34h 50m       │
 │  ──────────────────────             │
-│  Refresh                      ⌘R    │
 │  Open BambooHR                      │
 │  ──────────────────────             │
 │  Settings…                    ⌘,    │
@@ -56,8 +55,8 @@ Menu bar:   ● 4h 12m      (clocked in: circle.fill tinted green + today's tota
   data, the error is the top row. Clock in/out and Launch at Login failures
   show an `NSAlert` (a menu row would go unseen; the menu closes on click).
 - **401/403:** pause auto-refresh and show `Auto-refresh paused — check Settings`
-  (BambooHR disables API access after repeated bad credentials). Menu open or Refresh
-  still retries; success resumes.
+  (BambooHR disables API access after repeated bad credentials). Menu open still
+  retries; success resumes.
 - **Not configured:** `Not configured` row + Settings…, Launch at Login, Quit.
   At launch, open the settings dialog right away (the ⚙ is easy to miss).
   Saving settings starts everything without a relaunch.
