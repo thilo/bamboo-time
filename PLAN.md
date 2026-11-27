@@ -25,15 +25,15 @@ Menu bar:   ● 4h 12m      (clocked in: circle.fill tinted green + today's tota
             │ click
             ▼
 ┌─────────────────────────────────────┐
-│  Clock Out (in since 09:02)  ⌘K     │
+│ ●13:10 – (live)           42m  ⌘K   │
 │  ──────────────────────             │
-│  09:02 – 11:30         2h 28m       │
 │  11:45 – 13:00         1h 15m       │
-│  13:10 – (live)           42m       │
+│  09:02 – 11:30         2h 28m       │
 │  ──────────────────────             │
 │  Total today           4h 25m       │
 │  ──────────────────────             │
 │  Total this week      34h 50m       │
+│  Prev. 4 weeks       152h 05m       │
 │  ──────────────────────             │
 │  Open BambooHR Timesheet            │
 │  ──────────────────────             │
@@ -45,12 +45,16 @@ Menu bar:   ● 4h 12m      (clocked in: circle.fill tinted green + today's tota
 
 - **Label:** short (icon + total) because notched menu bars are cramped. Total
   in `monospacedDigitSystemFont` so the width doesn't jitter.
-- **Top item:** `Clock Out (in since 09:02)` (the suffix in the info rows'
-  font and `secondaryLabelColor`) or `Clock In`. While the POST runs:
-  `Working…`, disabled. After the POST, refresh.
+- **Top item:** clocked in, the live row: laid out like the entry rows with a
+  `systemGreen` dot as its `onStateImage` (the checkmark column, so the times
+  line up), enabled and uncolored; clicking it clocks out, and while
+  highlighted `(live)` reads `(clock out now)` and the dot becomes a
+  square (`menu(_:willHighlight:)`). Clocked
+  out: `Clock In`. While the POST runs: `Working…`, disabled. After the POST,
+  refresh.
 - **Info rows:** disabled items, `attributedTitle` with a right-aligned tab
-  stop; the live row is green; `No entries today` when empty.
-- **Week line:** `Total this week (excl. time off)` if time off couldn't be fetched.
+  stop; today's closed entries newest first; `No entries today` when empty.
+- **Week lines:** `Total this week` and `Prev. 4 weeks`, each with `(excl. time off)` if time off couldn't be fetched.
 - **Errors:** with stale data, a red `⚠ …` row under the top item; with no
   data, the error is the top row. Clock in/out and Launch at Login failures
   show an `NSAlert` (a menu row would go unseen; the menu closes on click).
@@ -83,8 +87,8 @@ Base URL `https://{companyDomain}.bamboohr.com/api/v1`. Auth: `Bearer
 | Purpose | Endpoint | Facts |
 | --- | --- | --- |
 | Identify self | `GET /employees/0` | `0` = the signed-in user; `id` may be a number or a string. Cache it (reset on settings save). |
-| Clock + manual entries | `GET /time_tracking/timesheet_entries?start={day before week start}&end={tomorrow}&employeeIds={id}` | Flat, unpaginated array `{type: "clock"\|"hour", date, start, end, timezone, hours}`. Includes the **open** clock entry (`end: null`, `hours: null`). A future `end` is accepted; `start` must be within the last 365 days. Dates like `2026-11-06T07:43:00+00:00` (plain ISO 8601). Use this instead of `/time-tracking/clock-entries`, which has clock entries only. |
-| Time off | `GET /time_off/requests?start={week start}&end={today}&employeeId={id}&status=approved&excludeNote=1` | `amount.unit` is `hours` or `days`; `dates` maps YYYY-MM-DD to the amount that day. Numbers may arrive as strings. `employeeId=0` is **not** supported (returns `[]`). |
+| Clock + manual entries | `GET /time_tracking/timesheet_entries?start={4-week start}&end={tomorrow}&employeeIds={id}` | Flat, unpaginated array `{type: "clock"\|"hour", date, start, end, timezone, hours}`. Includes the **open** clock entry (`end: null`, `hours: null`). A future `end` is accepted; `start` must be within the last 365 days. Dates like `2026-11-06T07:43:00+00:00` (plain ISO 8601). Use this instead of `/time-tracking/clock-entries`, which has clock entries only. |
+| Time off | `GET /time_off/requests?start={4-week start}&end={today}&employeeId={id}&status=approved&excludeNote=1` | `amount.unit` is `hours` or `days`; `dates` maps YYYY-MM-DD to the amount that day. Numbers may arrive as strings. `employeeId=0` is **not** supported (returns `[]`). |
 | Hours per day | `GET /meta/time_off/types` | `defaultHours: [{name: "Monday", amount: "8"}, …]` (amount is a string). Fetch once; retry on later refreshes while it fails. |
 | Clock in | `POST /time-tracking/clock-ins` `{"employeeId": 7, "timezone": "Europe/Berlin"}` | IANA `timezone` required (`TimeZone.current.identifier`). 409 if already clocked in. |
 | Clock out | `POST /time-tracking/clock-outs` `{"employeeId": 7}` | 404/409 if not clocked in. |
@@ -126,7 +130,7 @@ Errors are JSON problem details (`detail`/`title`/`message`). Map 401, 403,
 
 ## 3. Calculation rules
 
-- **Clocked in** = there's a `clock` entry with `end == null`; its `start` is "in since".
+- **Clocked in** = there's a `clock` entry with `end == null`; its `start` is the live row's start.
 - **Duration:** clock entries `end − start` (or `now − start` while open);
   `hours` is rounded, so ignore it for clock entries. Hour entries use `hours`.
 - **Today:** closed clock entries whose `date` equals today *in the entry's
@@ -135,12 +139,16 @@ Errors are JSON problem details (`detail`/`title`/`message`). Map 401, 403,
 - **This week:** all non-open entries (clock and hour) whose `date` is between
   the week start (user's first weekday, gregorian, entry's timezone) and today,
   plus the open entry, plus time off. YYYY-MM-DD strings compare as plain strings.
-- **Time off:** for each day from the week start through today: hour-based
+- **Prev. 4 weeks:** non-open entries plus time off in the four full weeks
+  before this one; this week doesn't count.
+- **Time off:** for each day from the week start through today (or across the previous 4 weeks): hour-based
   amounts as is; day-based amounts × `defaultHours` for that weekday (English
   name). That's how BambooHR's own weekly total counts it. Days after today
   don't count.
-- **Formatting:** `42m`, `4h`, `4h 12m`; times via `Date.FormatStyle` (follows
-  the user's 12/24h setting).
+- **Formatting:** menu bar `0h 42m`, `4h 00m`, `4h 12m` (one shape, so the
+  label width stays put); menu rows `42m`, `4h 12m`, `4h  5m` (a figure space
+  before a single-digit minute, so right-aligned h and m line up); times via
+  `Date.FormatStyle` (follows the user's 12/24h setting).
 
 ## 4. Architecture & decisions
 
@@ -153,7 +161,7 @@ flowchart TD
     E -->|render| A
     E -->|render| B
     F[Task.sleep loop<br/>60s in / 300s out] --> C
-    G[Clock In/Out item] -->|POST| D
+    G[Clock In item / live row] -->|POST| D
     H[UserDefaults: domain, employee id<br/>Keychain: refresh token] --> D
 ```
 
@@ -216,7 +224,7 @@ scripts/make-icon.swift       # draws the icon, runs iconutil
 3. `BambooClient`: request helper, errors, `selfEmployeeId`, `timesheetEntries`.
 4. `summarize` + formatting + unit tests (§3, §8).
 5. Menu rendering and the refresh loop; clock in/out; Open BambooHR Timesheet.
-6. Time off + hours per day + week line; error/paused/not-configured states.
+6. Time off + hours per day + week lines; error/paused/not-configured states.
 7. Launch at Login; `bundle.sh`; icon.
 
 ## 7. Packaging
@@ -239,15 +247,18 @@ scripts/make-icon.swift       # draws the icon, runs iconutil
 ## 8. Verification
 
 - **Unit tests:** empty day; closed + open today with yesterday excluded;
-  open entry from yesterday; per-entry timezone at midnight; week total with
-  manual entries; time off in hours and in days with a non-8h day; duration
-  formatting; live payload shapes (closed, open, `Z` offset); domain
+  open entry from yesterday; per-entry timezone at midnight; week and
+  previous-4-weeks totals with manual entries; time off in hours and in days
+  with a non-8h day; menu bar and menu row duration formatting; live payload shapes (closed, open, `Z` offset); domain
   normalization; PKCE challenge (RFC 7636 test vector).
 - **Live test** (`LiveTests.swift`): runs the real client and summing, prints
   the week's entries, and optionally asserts `BAMBOO_EXPECT_WEEK` against
   BambooHR's displayed weekly total. Reference: 47h 50m = 7h 50m clocked +
   5 vacation days × 8h.
-- **App:** clock in → green label that ticks; clock out → total freezes;
+- **App:** clock in → green label that ticks; hover the live row → square
+  and `(clock out now)`, green dot and `(live)` again on leaving it; the dot
+  stays green and the rows readable over light and dark wallpaper, in light
+  and dark mode; clock out → total freezes;
   relaunch while clocked in → state restored from the API; sleep > 5 min and
   wake → one clean refresh; replace the app with a rebuilt one → settings and
   sign-in survive; Launch at Login survives a logout; sign in through an SSO
@@ -264,5 +275,13 @@ scripts/make-icon.swift       # draws the icon, runs iconutil
   `/Applications`, not `build/`.
 - **`swift run`:** an unbundled binary has no bundle id; test the Keychain and
   `SMAppService` from the `.app`.
+- **Menu glass (macOS 26+):** disabled rows are faded, and the menu flips its
+  text light/dark with what's behind it, independent of the app's appearance.
+  Colored text (fixed or dynamic) ends up unreadable or flickers; label colors
+  stay readable. Put color only on a small marker. SF Symbols in the checkmark
+  column lose their color; draw the marker as a plain `NSImage`. A highlighted
+  row draws its checkmark column in the highlight's text color regardless.
+- **`codesign` with `SIGN_IDENTITY`** fails with `errSecInternalComponent` from
+  a shell that can't show the Keychain prompt; run `bundle.sh` in a terminal.
 - **Time off visibility:** an empty time-off result can also mean "no
   permission"; BambooHR returns `200 []` in that case.

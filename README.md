@@ -7,8 +7,9 @@ week's totals. Personal build: no dependencies, no Apple Developer account.
 
 "Total this week" matches BambooHR's own weekly figure: clocked time, manually
 entered hours, and approved time off (day-based time off counts with the
-company's hours for that weekday). If time off can't be read, the line says
-"(excl. time off)".
+company's hours for that weekday). "Prev. 4 weeks" counts the same over the
+four full weeks before this one. If time off can't be read, both lines
+say "(excl. time off)".
 
 ## Build & install
 

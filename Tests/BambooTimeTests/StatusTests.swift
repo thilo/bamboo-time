@@ -51,11 +51,13 @@ private func decode<T: Decodable>(_ json: String) throws -> T { try bambooDecode
         entry("2026-11-06", "2026-11-06T12:00:00Z", nil),                        // live: 1h
         entry("2026-11-06", "2026-11-06T08:00:00Z", "2026-11-06T10:00:00Z"),     // 2h
         entry("2026-11-04", "2026-11-04T08:00:00Z", "2026-11-04T16:00:00Z"),     // 8h
-        entry("2026-10-30", "2026-10-30T08:00:00Z", "2026-10-30T16:00:00Z"),     // last week
-    ] + manual, now: now)                                                         // + 1.5h manual this week
+        entry("2026-10-30", "2026-10-30T08:00:00Z", "2026-10-30T16:00:00Z"),     // last week: 8h
+        entry("2026-10-01", "2026-10-01T08:00:00Z", "2026-10-01T16:00:00Z"),     // over four weeks ago
+    ] + manual, now: now)                                                         // + 1.5h manual this week, 4h last week
     #expect(s.total == 3 * 3600)
     #expect(s.closed.count == 1)
     #expect(s.week == 12.5 * 3600)
+    #expect(s.fourWeeks == 12 * 3600)  // last week only: 8h clocked + 4h manual
 }
 
 @Test func timeOffCountsHoursAndDays() throws {
@@ -70,10 +72,14 @@ private func decode<T: Decodable>(_ json: String) throws -> T { try bambooDecode
 }
 
 @Test func formatsDurations() {
-    #expect(formatDuration(42 * 60) == "42m")
-    #expect(formatDuration(4 * 3600) == "4h")
-    #expect(formatDuration(4 * 3600 + 12 * 60) == "4h 12m")
-    #expect(formatDuration(-5) == "0m")
+    #expect(formatDuration(42 * 60) == "0h 42m")
+    #expect(formatDuration(4 * 3600) == "4h 00m")
+    #expect(formatDuration(4 * 3600 + 60) == "4h 01m")
+    #expect(formatDuration(-5) == "0h 00m")
+    #expect(formatRowDuration(23 * 60) == "23m")
+    #expect(formatRowDuration(5 * 60) == "\u{2007}5m")
+    #expect(formatRowDuration(4 * 3600 + 5 * 60) == "4h \u{2007}5m")
+    #expect(formatRowDuration(4 * 3600 + 17 * 60) == "4h 17m")
 }
 
 @Test func decodesApiPayload() throws {

@@ -9,12 +9,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var client: BambooClient?
     private var entries: [TimesheetEntry]?   // nil = nothing fetched yet
     private var error: String?
-    private var timeOffWeek: TimeInterval?  // nil = couldn't fetch
+    private var timeOff: (week: TimeInterval, fourWeeks: TimeInterval)?  // nil = couldn't fetch
     private var hoursPerDay: [String: Double]?  // company schedule, fetched once per configure
     private var paused = false           // after 401/403: stop auto-refresh until one on menu open succeeds
     private var busy = false             // clock in/out POST in flight
     private var loop: Task<Void, Never>?
     private var inFlight: Task<Void, Never>?
+    private weak var liveItem: NSMenuItem?  // top row while clocked in; its title changes on hover
 
     private var clockedIn: Bool { entries?.contains { $0.isOpen } ?? false }
 
@@ -38,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             BambooClient(domain: Prefs.domain, tokens: TokenStore(domain: Prefs.domain, config: config))
         } else { nil }
         entries = nil
-        timeOffWeek = nil
+        timeOff = nil
         hoursPerDay = nil
         error = nil
         paused = false
@@ -68,20 +69,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let id = try await employeeId(client)
             if hoursPerDay == nil { hoursPerDay = try? await client.hoursPerDay() }
             let now = Date(), tz = TimeZone.current.identifier, cal = Calendar.current
-            let (week, today) = (dayString(weekStart(now), timeZone: tz), dayString(now, timeZone: tz))
-            // From the day before the week starts, so an entry left open overnight is always found; to tomorrow for timezone slack.
-            let from = dayString(cal.date(byAdding: .day, value: -1, to: weekStart(now))!, timeZone: tz)
+            let (week, fourWeeks, today) = (dayString(weekStart(now), timeZone: tz),
+                                            dayString(weekStart(now, weeksBack: 4), timeZone: tz), dayString(now, timeZone: tz))
+            let lastWeekEnd = dayString(cal.date(byAdding: .day, value: -1, to: weekStart(now))!, timeZone: tz)
+            // Four weeks back also covers an entry left open overnight into this week; to tomorrow for timezone slack.
             let to = dayString(cal.date(byAdding: .day, value: 1, to: now)!, timeZone: tz)
-            async let sheet = client.timesheetEntries(employeeId: id, from: from, to: to)
-            async let timeOff = client.approvedTimeOff(employeeId: id, from: week, to: today)
+            async let sheet = client.timesheetEntries(employeeId: id, from: fourWeeks, to: to)
+            async let requests = client.approvedTimeOff(employeeId: id, from: fourWeeks, to: today)
             let fresh = try await sheet
             // Best effort: missing time-off permission mustn't break clock in/out.
-            let off: TimeInterval? = if let hoursPerDay {
-                try? await timeOffTime(timeOff, from: week, to: today, hoursPerDay: hoursPerDay)
+            let off: (week: TimeInterval, fourWeeks: TimeInterval)? = if let hoursPerDay, let requests = try? await requests {
+                (timeOffTime(requests, from: week, to: today, hoursPerDay: hoursPerDay),
+                 timeOffTime(requests, from: fourWeeks, to: lastWeekEnd, hoursPerDay: hoursPerDay))
             } else { nil }
             try Task.checkCancellation()
             entries = fresh
-            timeOffWeek = off
+            timeOff = off
             error = nil
             paused = false
         } catch {
@@ -137,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         if let summary {
-            menu.addItem(clockItem(summary.open))
+            menu.addItem(summary.open.flatMap { busy ? nil : liveRow($0) } ?? clockItem())
             if let error { menu.addItem(row("⚠ \(error)", color: .systemRed)) }
         } else {
             menu.addItem(error.map { row("⚠ \($0)", color: .systemRed) } ?? row("Loading…", color: .secondaryLabelColor))
@@ -145,21 +148,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if paused { menu.addItem(row("Auto-refresh paused — check Settings", color: .secondaryLabelColor)) }
 
         if let summary {
-            menu.addItem(.separator())
+            if !summary.closed.isEmpty || summary.open == nil { menu.addItem(.separator()) }
             for e in summary.closed {
-                menu.addItem(row("\(formatTime(e.start!)) – \(formatTime(e.end!))", right: formatDuration(e.duration(at: Date()))))
-            }
-            if let open = summary.open {
-                menu.addItem(row("\(formatTime(open.start!)) – (live)", right: formatDuration(open.duration(at: Date())), color: liveGreen))
+                menu.addItem(row("\(formatTime(e.start!)) – \(formatTime(e.end!))", right: formatRowDuration(e.duration(at: Date()))))
             }
             if summary.closed.isEmpty && summary.open == nil {
                 menu.addItem(row("No entries today", color: .secondaryLabelColor))
             }
             menu.addItem(.separator())
-            menu.addItem(row("Total today", right: formatDuration(summary.total)))
+            menu.addItem(row("Total today", right: formatRowDuration(summary.total)))
             menu.addItem(.separator())
-            menu.addItem(row(timeOffWeek == nil ? "Total this week (excl. time off)" : "Total this week",
-                             right: formatDuration(summary.week + (timeOffWeek ?? 0))))
+            let excl = timeOff == nil ? " (excl. time off)" : ""
+            menu.addItem(row("Total this week" + excl, right: formatRowDuration(summary.week + (timeOff?.week ?? 0))))
+            menu.addItem(row("Prev. 4 weeks" + excl, right: formatRowDuration(summary.fourWeeks + (timeOff?.fourWeeks ?? 0))))
         }
         menu.addItem(.separator())
         menu.addItem(timesheetItem())
@@ -167,18 +168,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         addFooter()
     }
 
-    /// "Clock Out (in since 09:02)", the suffix in the info rows' low-contrast style.
-    private func clockItem(_ open: TimesheetEntry?) -> NSMenuItem {
-        let i = item(busy ? "Working…" : (open != nil ? "Clock Out" : "Clock In"), #selector(toggleClock), "k")
+    /// Clocked out: "Clock In"; while the POST runs: "Working…".
+    private func clockItem() -> NSMenuItem {
+        let i = item(busy ? "Working…" : "Clock In", #selector(toggleClock), "k")
         i.isEnabled = !busy
-        if let start = open?.start, !busy {
-            let title = NSMutableAttributedString(string: i.title, attributes: [.font: NSFont.menuFont(ofSize: 0)])
-            title.append(NSAttributedString(string: " (in since \(formatTime(start)))", attributes: [
-                .font: infoFont,
-                .foregroundColor: NSColor.secondaryLabelColor]))
-            i.attributedTitle = title
-        }
         return i
+    }
+
+    /// Clocked in: the open entry, laid out like the entry rows (dot in the checkmark column so the times
+    /// line up); clicking it clocks out.
+    private func liveRow(_ open: TimesheetEntry) -> NSMenuItem {
+        let i = item("", #selector(toggleClock), "k")
+        i.attributedTitle = liveTitle(open, hover: false)
+        i.state = .on
+        i.onStateImage = liveDot
+        liveItem = i
+        return i
+    }
+
+    private func liveTitle(_ open: TimesheetEntry, hover: Bool) -> NSAttributedString {
+        // No color: enabled items get AppKit's own text colors, including the highlighted one.
+        infoTitle("\(formatTime(open.start!)) – " + (hover ? "(clock out now)" : "(live)"),
+                  right: formatRowDuration(open.duration(at: Date())), color: nil)
+    }
+
+    func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        guard let liveItem, let open = entries?.first(where: { $0.isOpen }) else { return }
+        let hover = item === liveItem
+        liveItem.attributedTitle = liveTitle(open, hover: hover)
+        liveItem.onStateImage = hover ? stopSquare : liveDot
     }
 
     /// Disabled until signed in and the employee id is known (it is part of the URL).
@@ -202,24 +220,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return i
     }
 
-    /// Disabled rows are dimmed, which washes out systemGreen on the light menu; use a darker green there.
-    /// Resolved per render from the app's appearance: a dynamic color resolves against whatever appearance
-    /// is current while drawing (e.g. the menu bar's, dark over a dark wallpaper) and flips as the menu opens.
-    private var liveGreen: NSColor {
-        NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? .systemGreen : NSColor(red: 0.12, green: 0.60, blue: 0.22, alpha: 1)
+    /// The live row's only color: on glass, color goes on small status markers, not text. Drawn, not an
+    /// SF Symbol: the menu restyles symbols in the checkmark column and drops their color.
+    private let liveDot = marker("Live", .systemGreen) { NSBezierPath(ovalIn: $0) }
+    /// Only shown highlighted, where the menu draws the checkmark column in the highlight's text color anyway.
+    private let stopSquare = marker("Clock out", .labelColor) { NSBezierPath(rect: $0.insetBy(dx: 0.5, dy: 0.5)) }
+
+    private static func marker(_ name: String, _ color: NSColor, _ shape: @escaping (NSRect) -> NSBezierPath) -> NSImage {
+        let image = NSImage(size: NSSize(width: 9, height: 9), flipped: false) { rect in
+            color.setFill()
+            shape(rect).fill()
+            return true
+        }
+        image.accessibilityDescription = name
+        return image
     }
 
-    /// Informational, non-clickable row; `right` is right-aligned at a tab stop.
+    /// Informational, non-clickable row.
     private func row(_ text: String, right: String? = nil, color: NSColor = .labelColor) -> NSMenuItem {
-        let style = NSMutableParagraphStyle()
-        style.tabStops = [NSTextTab(textAlignment: .right, location: 220)]
         let i = NSMenuItem()
-        i.attributedTitle = NSAttributedString(
-            string: right.map { "\(text)\t\($0)" } ?? text,
-            attributes: [.foregroundColor: color, .paragraphStyle: style, .font: infoFont])
+        i.attributedTitle = infoTitle(text, right: right, color: color)
         i.isEnabled = false
         return i
+    }
+
+    /// `right` is right-aligned at a tab stop.
+    private func infoTitle(_ text: String, right: String?, color: NSColor?) -> NSAttributedString {
+        let style = NSMutableParagraphStyle()
+        style.tabStops = [NSTextTab(textAlignment: .right, location: 220)]
+        var attributes: [NSAttributedString.Key: Any] = [.paragraphStyle: style, .font: infoFont]
+        attributes[.foregroundColor] = color
+        return NSAttributedString(string: right.map { "\(text)\t\($0)" } ?? text, attributes: attributes)
     }
 
     // MARK: Actions
