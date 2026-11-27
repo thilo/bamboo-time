@@ -24,11 +24,13 @@ struct TimesheetEntry: Decodable, Sendable {
 
 struct Summary {
     var open: TimesheetEntry?
-    /// Today's closed clock entries, oldest first.
+    /// Today's closed clock entries, newest first.
     var closed: [TimesheetEntry]
     var total: TimeInterval
     /// Clock and manual hour entries since the start of this week (user's first weekday), plus the open entry.
     var week: TimeInterval
+    /// Clock and manual hour entries in the four full weeks before this one.
+    var fourWeeks: TimeInterval
 }
 
 /// "Today" is evaluated per entry in the entry's own timezone, so a midnight
@@ -38,11 +40,18 @@ func summarize(_ entries: [TimesheetEntry], now: Date) -> Summary {
     let live = open?.duration(at: now) ?? 0
     let closed = entries
         .filter { $0.isClock && !$0.isOpen && $0.date == dayString(now, timeZone: $0.tz) }
-        .sorted { $0.start! < $1.start! }
+        .sorted { $0.start! > $1.start! }
+    func start(_ weeksBack: Int, _ e: TimesheetEntry) -> String {
+        dayString(weekStart(now, weeksBack: weeksBack, timeZone: e.tz), timeZone: e.tz)
+    }
     let week = entries
-        .filter { !$0.isOpen && $0.date >= dayString(weekStart(now, timeZone: $0.tz), timeZone: $0.tz) && $0.date <= dayString(now, timeZone: $0.tz) }
+        .filter { !$0.isOpen && $0.date >= start(0, $0) && $0.date <= dayString(now, timeZone: $0.tz) }
         .reduce(live) { $0 + $1.duration(at: now) }
-    return Summary(open: open, closed: closed, total: closed.reduce(live) { $0 + $1.duration(at: now) }, week: week)
+    let fourWeeks = entries
+        .filter { !$0.isOpen && $0.date >= start(4, $0) && $0.date < start(0, $0) }
+        .reduce(0) { $0 + $1.duration(at: now) }
+    return Summary(open: open, closed: closed, total: closed.reduce(live) { $0 + $1.duration(at: now) },
+                   week: week, fourWeeks: fourWeeks)
 }
 
 /// Gregorian (the API's `date` format) but with the user's first weekday.
@@ -59,17 +68,25 @@ func dayString(_ date: Date, timeZone id: String) -> String {
     return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
 }
 
-func weekStart(_ date: Date, timeZone id: String = TimeZone.current.identifier) -> Date {
-    calendar(id).dateInterval(of: .weekOfYear, for: date)!.start
+/// Start of this week, or of the week `weeksBack` weeks earlier.
+func weekStart(_ date: Date, weeksBack: Int = 0, timeZone id: String = TimeZone.current.identifier) -> Date {
+    let cal = calendar(id)
+    return cal.date(byAdding: .weekOfYear, value: -weeksBack, to: cal.dateInterval(of: .weekOfYear, for: date)!.start)!
 }
 
 
-/// "42m", "4h", "4h 12m"
+/// "0h 42m", "4h 00m", "4h 12m": one shape, so the menu bar title keeps its width.
 func formatDuration(_ seconds: TimeInterval) -> String {
     let minutes = max(0, Int((seconds / 60).rounded()))
-    let h = minutes / 60, m = minutes % 60
-    if h == 0 { return "\(m)m" }
-    return m == 0 ? "\(h)h" : "\(h)h \(m)m"
+    return String(format: "%dh %02dm", minutes / 60, minutes % 60)
+}
+
+/// Menu rows: "23m", "4h 17m", "4h  5m". A single-digit minute gets a figure space (digit width), so
+/// right-aligned durations keep their h and m in one column.
+func formatRowDuration(_ seconds: TimeInterval) -> String {
+    let minutes = max(0, Int((seconds / 60).rounded()))
+    let m = (minutes % 60 < 10 ? "\u{2007}" : "") + "\(minutes % 60)m"
+    return minutes < 60 ? m : "\(minutes / 60)h \(m)"
 }
 
 func formatTime(_ date: Date) -> String {
